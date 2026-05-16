@@ -1,17 +1,26 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import pandas_ta as ta
+import numpy as np
 from datetime import datetime
 import time
 
+# ===================== SAFE IMPORT =====================
+try:
+    import pandas_ta as ta
+except ImportError:
+    st.error("❌ pandas-ta package is not installed!")
+    st.info("Please ensure your requirements.txt contains: **pandas-ta==0.3.14b0**")
+    st.stop()
+
+# ===================== PAGE CONFIG =====================
 st.set_page_config(
     page_title="EasyCharts Pro - Nifty 500 Scanner",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom Styling
 st.markdown("""
     <style>
     .main-header {
@@ -30,7 +39,6 @@ st.markdown("""
         text-align: center;
         color: white;
         margin: 10px 0;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     .stButton>button {
         width: 100%;
@@ -53,7 +61,6 @@ def play_alert():
 
 @st.cache_data(ttl=3600)
 def load_stock_symbols():
-    """Full Nifty 500 Symbols"""
     symbols = [
         "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL",
         "KOTAKBANK", "LT", "AXISBANK", "ASIANPAINT", "MARUTI", "TITAN", "SUNPHARMA", "ULTRACEMCO",
@@ -65,28 +72,18 @@ def load_stock_symbols():
         "GAIL", "BOSCHLTD", "CHOLAFIN", "MUTHOOTFIN", "PNB", "CANBK", "RECLTD", "NMDC", "ICICIGI",
         "SRF", "TORNTPHARM", "DABUR", "MARICO", "PEL", "BANKBARODA", "MOTHERSON", "SHREECEM",
         "AMBUJACEM", "TRENT", "INDUSTOWER", "BERGEPAINT", "COLPAL", "LTIM", "HINDPETRO", "BPCL",
-        "IOCL", "SAIL", "LUPIN", "BIOCON", "NAUKRI", "ZOMATO", "PAYTM", "DIXON", "POLYCAB",
-        "CROMPTON", "VOLTAS", "TVSMOTOR", "ASHOKLEY", "ESCORTS", "MRF", "CONCOR", "GMRINFRA",
-        "PERSISTENT", "COFORGE", "LTTS", "MPHASIS", "OFSS", "AUBANK", "IDFCFIRSTB", "IDEA",
-        "JINDALSTEL", "APLAPOLLO", "ASTRAL", "DEEPAKNTR", "GODREJPROP", "HDFCAMC", "IRCTC",
-        "JUBLFOOD", "LAURUSLABS", "MAXHEALTH", "OBEROIRLTY", "PAGEIND", "PIIND", "POLICYBZR",
-        "SYNGENE", "TATACOMM", "UBL", "WHIRLPOOL", "AAVAS", "AFFLE", "ANGELONE", "ATUL", "AUROPHARMA",
-        "BATAINDIA", "BEL", "BHARATFORG", "BHEL", "CLEAN", "CUMMINSIND", "CYIENT", "DELHIVERY",
-        "EASEMYTRIP", "EXIDEIND", "HAL", "HBLPOWER", "IRB", "IRCTC", "KPITTECH", "MAZDOCK",
-        "NYKAA", "RVNL", "SONACOMS", "SUNTV", "SUZLON", "TATATECH", "TRIDENT", "VBL", "ZEEL",
-        # More Quality Stocks
-        "ALKEM", "ABB", "ABBOTINDIA", "ADANIENSOL", "ADANIPOWER", "AJANTPHARM", "APARINDS",
-        "BANDHANBNK", "BEML", "BHARATFORG", "BLUESTARCO", "CAMS", "CARBORUNIV", "CDSL", "CHAMBLFERT",
-        "CUB", "DABUR", "DALMIACEM", "EMAMILTD", "FINEORG", "GICRE", "GNFC", "GRINDWELL", "HAL",
-        "HONAUT", "IGL", "IPCALAB", "JKCEMENT", "KALPATPOWR", "KEI", "KPR", "LINDEINDIA", "LUXIND",
-        "MAHINDCIE", "METROPOLIS", "NAVINFLUOR", "NIIT", "OBEROIRLTY", "PRAJIND", "RAMCOCEM",
-        "SCHAEFFLER", "SOLARINDS", "SUPREMEIND", "THERMAX", "TIMKEN", "TTKPRESTIG", "VIPIND",
-        "VINATIORGA", "ZYDUSLIFE"
+        "IOCL", "SAIL", "LUPIN", "BIOCON", "ZOMATO", "DIXON", "POLYCAB", "TVSMOTOR", "PERSISTENT",
+        "COFORGE", "LTTS", "AUBANK", "IDFCFIRSTB", "IRCTC", "JUBLFOOD", "OBEROIRLTY", "PAGEIND",
+        "PIIND", "SYNGENE", "UBL", "BEL", "HAL", "SUZLON", "RVNL", "TRIDENT", "VBL", "ZEEL",
+        "AAVAS", "AFFLE", "ANGELONE", "ATUL", "AUROPHARMA", "BATAINDIA", "BHARATFORG", "CLEAN",
+        "CUMMINSIND", "CYIENT", "DEEPAKNTR", "GODREJPROP", "HDFCAMC", "LAURUSLABS", "MAXHEALTH",
+        "NYKAA", "SONACOMS", "TATATECH", "ALKEM", "ABB", "ADANIENSOL", "APARINDS", "BHEL",
+        "CARBORUNIV", "CDSL", "EMAMILTD", "HONAUT", "IGL", "JKCEMENT", "KPITTECH", "LINDEINDIA",
+        "MAZDOCK", "PRAJIND", "SOLARINDS", "SUPREMEIND", "THERMAX", "VIPIND", "ZYDUSLIFE"
     ]
     return sorted(list(set(symbols)))
 
-# Analysis Function (Same improved logic)
-def analyze_all_indicators(symbols, batch_size=200):
+def analyze_all_indicators(symbols, batch_size=250):
     pre_breakout, live_breakout, momentum = [], [], []
     symbols = symbols[:batch_size]
     tickers = [f"{s}.NS" for s in symbols]
@@ -129,23 +126,20 @@ def analyze_all_indicators(symbols, batch_size=200):
                 vol_ma = df['Volume'].rolling(20).mean().iloc[-1]
                 vol_ratio = round(df['Volume'].iloc[-1] / vol_ma, 2) if vol_ma > 0 else 0
 
-                super_trend = ta.supertrend(df['High'], df['Low'], df['Close'], 10, 3)
-                st_trend = super_trend['SUPERTd_10_3.0'].iloc[-1] if not super_trend.empty else 0
-
-                # === Signal Logic ===
-                if (ltp > upper_bb and vol_ratio > 1.5 and 60 < rsi < 85 and st_trend == 1):
+                # Signal Logic
+                if (ltp > upper_bb and vol_ratio > 1.5 and 60 < rsi < 85):
                     signal = "🟢 STRONG BUY"
                     reason = f"Breakout + {vol_ratio}x Volume"
                     cat = "live"
-                    conf = min(95, 70 + int(vol_ratio*6))
+                    conf = min(95, 70 + int(vol_ratio * 6))
 
-                elif (abs(ltp - ema200)/ema200 < 0.05 and 45 < rsi < 62):
+                elif (abs(ltp - ema200) / ema200 <= 0.05 and 45 < rsi < 62):
                     signal = "🔵 BUY SETUP"
                     reason = "Near 200 EMA Support"
                     cat = "pre"
                     conf = 68
 
-                elif (ltp > ema200 and ltp > ema50 and ltp > ema20 and rsi > 55 and adx > 23):
+                elif (ltp > ema200 and ltp > ema50 and rsi > 55 and adx > 23):
                     signal = "🔥 MOMENTUM"
                     reason = f"Strong Trend | ADX {round(adx,1)}"
                     cat = "mom"
@@ -165,9 +159,12 @@ def analyze_all_indicators(symbols, batch_size=200):
                     "Reason": reason
                 }
 
-                if cat == "live": live_breakout.append(stock)
-                elif cat == "pre": pre_breakout.append(stock)
-                elif cat == "mom": momentum.append(stock)
+                if cat == "live":
+                    live_breakout.append(stock)
+                elif cat == "pre":
+                    pre_breakout.append(stock)
+                elif cat == "mom":
+                    momentum.append(stock)
 
             except:
                 continue
@@ -176,33 +173,34 @@ def analyze_all_indicators(symbols, batch_size=200):
         status_text.empty()
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error during analysis: {e}")
 
     return pre_breakout, live_breakout, momentum
 
-
-# ====================== UI ======================
+# ===================== UI =====================
 st.markdown("""
     <div class='main-header'>
         <h1>📈 EasyCharts Pro - Nifty 500 Scanner</h1>
-        <p>Real-time Breakout & Momentum Scanner for Nifty 500</p>
+        <p>Real-time Breakout & Momentum Scanner</p>
     </div>
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("⚙️ Scanner Settings")
     all_symbols = load_stock_symbols()
-    st.success(f"✅ Loaded {len(all_symbols)} Nifty 500 Stocks")
+    st.success(f"✅ Loaded {len(all_symbols)} Stocks")
 
-    batch_size = st.slider("Stocks to Scan", 50, 500, 250, 50)
-    show_details = st.checkbox("Show All Details", value=True)
-
+    batch_size = st.slider("Stocks to Scan", 50, 500, 250, 25)
     st.markdown("---")
     st.markdown("**Signal Legend**")
-    st.markdown("🟢 **STRONG BUY** - Live Breakout\n🔵 **BUY SETUP** - Pre Breakout\n🔥 **MOMENTUM** - Strong Trend")
+    st.markdown("""
+    - 🟢 **STRONG BUY** → Live Breakout  
+    - 🔵 **BUY SETUP** → Pre-Breakout  
+    - 🔥 **MOMENTUM** → Strong Trend
+    """)
 
-if st.button('🚀 START FULL MARKET SCAN', type="primary"):
-    with st.spinner("Scanning Nifty 500 stocks... Please wait"):
+if st.button('🚀 START MARKET SCAN', type="primary"):
+    with st.spinner("Scanning Nifty 500 stocks..."):
         pre, live, mom = analyze_all_indicators(load_stock_symbols(), batch_size)
 
     if live:
@@ -210,23 +208,32 @@ if st.button('🚀 START FULL MARKET SCAN', type="primary"):
         st.balloons()
 
     col1, col2, col3 = st.columns(3)
-    with col1: st.markdown(f"<div class='stat-box'><h2>{len(pre)}</h2><p>Pre-Breakout</p></div>", unsafe_allow_html=True)
-    with col2: st.markdown(f"<div class='stat-box'><h2>{len(live)}</h2><p>Live Breakouts</p></div>", unsafe_allow_html=True)
-    with col3: st.markdown(f"<div class='stat-box'><h2>{len(mom)}</h2><p>Momentum</p></div>", unsafe_allow_html=True)
+    with col1:
+        st.markdown(f"<div class='stat-box'><h2>{len(pre)}</h2><p>Pre-Breakout</p></div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div class='stat-box'><h2>{len(live)}</h2><p>Live Breakouts</p></div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"<div class='stat-box'><h2>{len(mom)}</h2><p>Momentum</p></div>", unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
     with c1:
         st.subheader("🔵 Pre-Breakout Setups")
-        if pre: st.dataframe(pd.DataFrame(pre), use_container_width=True, height=450)
-        else: st.info("No pre-breakout setups")
+        if pre:
+            st.dataframe(pd.DataFrame(pre), use_container_width=True, height=450)
+        else:
+            st.info("No pre-breakout setups found")
     with c2:
         st.subheader("🟢 Live Breakouts")
-        if live: st.dataframe(pd.DataFrame(live), use_container_width=True, height=450)
-        else: st.info("No live breakouts found")
+        if live:
+            st.dataframe(pd.DataFrame(live), use_container_width=True, height=450)
+        else:
+            st.info("No live breakouts found")
     with c3:
         st.subheader("🔥 Momentum Stocks")
-        if mom: st.dataframe(pd.DataFrame(mom), use_container_width=True, height=450)
-        else: st.info("No momentum stocks")
+        if mom:
+            st.dataframe(pd.DataFrame(mom), use_container_width=True, height=450)
+        else:
+            st.info("No momentum stocks found")
 
     st.success(f"✅ Scan Completed at {datetime.now().strftime('%I:%M:%S %p')}")
 
