@@ -1,6 +1,6 @@
 streamlit
 pandas
 yfinance
-pandas_ta
-plotly
+pandas-ta==0.3.14b0
 numpy
+plotly
