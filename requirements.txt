@@ -1,6 +1,7 @@
-streamlit
-pandas
-yfinance
-pandas-ta==0.3.14b0
-numpy==1.26.4
-plotly
+# requirements.txt for EasyCharts Pro - Nifty 500 Scanner
+
+streamlit>=1.28.0
+pandas>=2.0.0
+yfinance>=0.2.28
+pandas-ta>=0.3.14b0
+numpy>=1.24.0
